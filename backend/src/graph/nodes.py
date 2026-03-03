@@ -90,10 +90,16 @@ def audit_content_node(state: VideoAuditState) -> Dict[str, Any]:
         temperature=0.0
     )
 
+    print("Initialized AzureChatOpenAI *******")
+
     embeddings = AzureOpenAIEmbeddings(
-        azure_deployment="text-embedding-3-small",
-        openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-    )
+            azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"),
+            azure_endpoint=os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT"),
+            api_key=os.getenv("AZURE_OPENAI_EMBEDDING_KEY"),
+            openai_api_version=os.getenv("AZURE_OPENAI_EMBEDDING_API_VERSION", "2024-02-01"),
+        )
+    
+    print("Initialized AzureOpenAIEmbeddings *******")
 
     vector_store = AzureSearch(
         azure_search_endpoint=os.getenv("AZURE_SEARCH_ENDPOINT"),
