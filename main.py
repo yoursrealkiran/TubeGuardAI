@@ -9,27 +9,27 @@ compliance audit workflow. Think of it as the master switch that:
 """
 
 # Standard library imports for basic Python functionality
-import uuid      # Generates unique IDs (like session tracking numbers)
-import json      # Handles JSON data formatting (converts Python dicts to readable text)
-import logging   # Records what happens during execution (like a flight recorder)
+import uuid      # To generate unique IDs (like session tracking numbers)
+import json      # To handle JSON data formatting (converts Python dicts to readable text)
+import logging   # To record what happens during execution (like a flight recorder)
 from pprint import pprint  # Pretty-prints data structures (unused here, but available)
 
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
-load_dotenv(override=True)  # override=True means .env values take priority over system variables
+load_dotenv(override=True)  # override=True, .env values take priority over system variables
 
-# Import the main workflow graph (the "brain" of your compliance system)
+# Import the main workflow graph 
 from backend.src.graph.workflow import app
 
-# Configure logging - sets up the "flight recorder" for your application
+# Configure logging - sets up the "flight recorder" for the application
 logging.basicConfig(
     level=logging.INFO,        # INFO = show important events (DEBUG would show everything)
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'  
     # Format: timestamp - logger_name - severity - message
     # Example: "2024-01-15 10:30:45 - brand-guardian - INFO - Starting audit"
 )
-logger = logging.getLogger("brand-guardian-runner")  # Creates a named logger for this module
+logger = logging.getLogger("tube-guard-ai-runner")  # Creates a named logger for this module
 
 
 def run_cli_simulation():
@@ -44,20 +44,17 @@ def run_cli_simulation():
     """
     
     # ========== STEP 1: GENERATE SESSION ID ==========
-    # Creates a unique identifier for this audit session
-    # Example: "ce6c43bb-c71a-4f16-a377-8b493502fee2"
+    # Createing a unique identifier for this audit session
     session_id = str(uuid.uuid4())  # uuid4() generates random UUID
     logger.info(f"Starting Audit Session: {session_id}")  # Log to console/file
 
     # ========== STEP 2: DEFINE INITIAL STATE ==========
     # This dictionary contains all the input data for the workflow
-    # Think of it as the "intake form" for the compliance audit
     initial_inputs = {
         # The YouTube video to audit
         "video_url": "https://youtu.be/dT7S75eYhcQ",
         
         # Shortened video ID for easier tracking (first 8 chars of session ID)
-        # Example: "vid_ce6c43bb"
         "video_id": f"vid_{session_id[:8]}",
         
         # Empty list that will store compliance violations found
@@ -65,12 +62,11 @@ def run_cli_simulation():
         "compliance_results": [],
         
         # Empty list for any errors during processing
-        # Example: ["Download failed", "Transcript unavailable"]
         "errors": []
     }
 
     # ========== DISPLAY SECTION: INPUT SUMMARY ==========
-    print("\n--- 1.nput Payload: INITIALIZING WORKFLOW ---")
+    print("\n--- 1.Input Payload: INITIALIZING WORKFLOW ---")
     # json.dumps() converts Python dict to formatted JSON string
     # indent=2 makes it readable with 2-space indentation
     print(f"I {json.dumps(initial_inputs, indent=2)}")
@@ -109,7 +105,6 @@ def run_cli_simulation():
             # Loop through each violation and display it
             for issue in results:
                 # Each issue is a dict with: severity, category, description
-                # Example output: "- [CRITICAL] Misleading Claims: Absolute guarantee detected"
                 print(f"- [{issue.get('severity')}] {issue.get('category')}: {issue.get('description')}")
         else:
             # No violations found (clean video)
@@ -118,22 +113,15 @@ def run_cli_simulation():
         # ========== SUMMARY SECTION ==========
         print("\n[ FINAL SUMMARY ]")
         # Displays the AI-generated natural language summary
-        # Example: "Video contains 2 critical violations..."
         print(final_state.get('final_report'))
 
     except Exception as e:
         # ========== ERROR HANDLING ==========
-        # If anything breaks, log the error
         logger.error(f"Workflow Execution Failed: {str(e)}")
         
-        # Re-raise the exception so we see the full error traceback
-        # This helps with debugging (shows exactly where/why it failed)
         raise e
 
 
-# ========== PROGRAM ENTRY POINT ==========
-# This block only runs when you execute: python main.py
-# It won't run if you import this file as a module
 if __name__ == "__main__":
     run_cli_simulation()  # Start the compliance audit simulation
 
