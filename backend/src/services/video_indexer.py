@@ -8,6 +8,10 @@ import logging
 import requests
 import yt_dlp
 from azure.identity import DefaultAzureCredential
+from dotenv import load_dotenv
+
+# Load the .env file BEFORE initializing the credential
+load_dotenv()
 
 
 logger = logging.getLogger("video-indexer")
@@ -18,7 +22,7 @@ class VideoIndexerService:
         self.location = os.getenv("AZURE_VI_LOCATION")
         self.subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID")
         self.resource_group = os.getenv("AZURE_RESOURCE_GROUP")
-        self.vi_name = os.getenv("AZURE_VI_NAME", "project-brand-guardian-001")
+        self.vi_name = os.getenv("AZURE_VI_NAME", "tube-guard-ai-project-001")
         self.credential = DefaultAzureCredential()
 
     def get_access_token(self):
@@ -33,6 +37,7 @@ class VideoIndexerService:
 
     def get_account_token(self, arm_access_token):
         """Exchanges ARM token for Video Indexer Account Token."""
+        print(f"Inside account token block")
         url = (
             f"https://management.azure.com/subscriptions/{self.subscription_id}"
             f"/resourceGroups/{self.resource_group}"
