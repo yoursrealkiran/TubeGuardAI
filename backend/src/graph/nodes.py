@@ -45,7 +45,7 @@ def index_video_node(state: VideoAuditState) -> Dict[str, Any]:
         else:
             raise Exception("Currently only youtube videos are supported, upload a valid youtube URL")
         # Upload
-        azure_video_id = vi_service.upload_video_to_azure(local_path, video_name = video_id_input)
+        azure_video_id = vi_service.upload_video(local_path, video_name = video_id_input)
         logger.info(f"Upload success. Azure ID : {azure_video_id}")
         # cleanup
         if os.path.exists(local_path):
