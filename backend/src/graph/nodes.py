@@ -18,7 +18,7 @@ from backend.src.services.video_indexer import VideoIndexerService
 
 # Configure the logger
 
-logger = logging .getLogger("Brand-guardian")
+logger = logging .getLogger("TubeGuardAI-GraphNodes")
 logging.basicConfig(level=logging.INFO)
 
 # NODE 1 : Indexer
