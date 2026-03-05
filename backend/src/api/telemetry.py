@@ -1,41 +1,37 @@
-import os          
-import logging      
-from azure.monitor.opentelemetry import configure_azure_monitor  
+import os
+import logging
+from azure.monitor.opentelemetry import configure_azure_monitor
+from opentelemetry import trace
 
-
-
-# This separates telemetry logs from main application logs
+# This logger is used for telemetry setup status
 logger = logging.getLogger("tube-guard-ai-telemetry")
 
-
-
 def setup_telemetry():
-    
-    # ========== STEP 1: RETRIEVE CONNECTION STRING ==========
-    # Reads the Azure Monitor connection string from environment variables
+    """
+    Initializes Azure Monitor OpenTelemetry instrumentation.
+    Captures: HTTP requests, SQL/DB calls, and logging.info/error calls.
+    """
     connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
     
-    # ========== STEP 2: CHECK IF CONFIGURED ==========
     if not connection_string:
-        # If the environment variable is missing/empty, telemetry won't work
-        logger.warning("No Instrumentation Key found. Telemetry is DISABLED.")
+        logger.warning("TELEMETRY: No connection string found. Running in local-only mode.")
         return  
 
-    # ========== STEP 3: CONFIGURE AZURE MONITOR ==========
     try:
-        # configure_azure_monitor() does the heavy lifting:
-        # 1. Registers automatic instrumentation for:
-        #    - HTTP requests (FastAPI endpoints)
-        #    - Database calls (Azure Search queries)
-        #    - Logging events
-        # 2. Starts background thread to send data to Azure
+        # configure_azure_monitor automatically instruments FastAPI and standard libraries
         configure_azure_monitor(
-            connection_string=connection_string,  # Where to send data
-            logger_name="tube-guard-ai-tracer"   # Optional: custom tracer name
+            connection_string=connection_string,
+            # Linking these specific logger names ensures their output is sent to Azure 'Traces'
+            logger_name="api-server" 
         )
-        logger.info(" Azure Monitor Tracking Enabled & Connected!")
+        
+        # Set the log level for our specific app loggers
+        logging.getLogger("api-server").setLevel(logging.INFO)
+        
+        logger.info("Azure Monitor Tracking Enabled & Connected!")
         
     except Exception as e:
-
         logger.error(f"Failed to initialize Azure Monitor: {e}")
-        
+
+# Export a tracer for manual spans in the server code
+tracer = trace.get_tracer("tube-guard-tracer")
