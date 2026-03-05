@@ -1,150 +1,99 @@
-import uuid        # Generate unique session IDs
-import logging     # Application logging
-from fastapi import FastAPI, HTTPException  
-from pydantic import BaseModel  
-from typing import List, Optional  
+import uuid
+import logging
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional
+from opentelemetry import trace # For manual tracing of the Graph logic
 
-
-
-# ========== STEP 1: LOAD ENVIRONMENT VARIABLES ==========
-# CRITICAL: Must happen BEFORE importing modules that need env vars
+# ========== STEP 1: LOAD ENVIRONMENT & TELEMETRY ==========
 from dotenv import load_dotenv
-load_dotenv(override=True)  
+load_dotenv(override=True)
 
+from backend.src.api.telemetry import setup_telemetry, tracer
+setup_telemetry() 
 
-
-# ========== STEP 2: INITIALIZE TELEMETRY ==========
-from backend.src.api.telemetry import setup_telemetry
-setup_telemetry()  
-# Starts tracking all API activity
-# Must happen AFTER load_dotenv() but BEFORE creating FastAPI app
-
-
-# ========== STEP 3: IMPORT WORKFLOW GRAPH ==========
+# ========== STEP 2: IMPORTS ==========
 from backend.src.graph.workflow import app as compliance_graph
-# Imports my LangGraph workflow (Indexer → Auditor)
-# Renamed to 'compliance_graph' to avoid confusion with FastAPI's 'app'
 
+# Configure standard logging to feed into the instrumented "api-server" logger
+logger = logging.getLogger("api-server")
 
-# ========== STEP 4: CONFIGURE LOGGING ==========
-logging.basicConfig(level=logging.INFO)  
-# Sets default log level (INFO = important events, not debug spam)
-
-logger = logging.getLogger("api-server")  
-# Creates named logger for this module
-
-
-# ========== STEP 5: CREATE FASTAPI APPLICATION ==========
 app = FastAPI(
-    # Metadata for auto-generated API documentation (Swagger UI)
     title="Tube Guard AI API",
     description="API for auditing video content against brand compliance rules.",
     version="1.0.0"
 )
-# FastAPI automatically creates:
-# - Interactive docs at http://localhost:8000/docs
-# - OpenAPI schema at http://localhost:8000/openapi.json
 
+# ========== STEP 3: MODELS ==========
 
-# ========== STEP 6: DEFINE DATA MODELS (PYDANTIC) ==========
-
-# --- REQUEST MODEL ---
 class AuditRequest(BaseModel):
+    video_url: str
 
-    video_url: str  # Required string field
-
-
-# --- NESTED MODEL ---
 class ComplianceIssue(BaseModel):
+    category: str
+    severity: str
+    description: str
 
-    category: str      # Example: "Misleading Claims"
-    severity: str      # Example: "CRITICAL"
-    description: str   # Example: "Absolute guarantee detected at 00:32"
-
-
-# --- RESPONSE MODEL ---
 class AuditResponse(BaseModel):
+    session_id: str
+    video_id: str
+    status: str
+    final_report: str
+    compliance_results: List[ComplianceIssue]
 
-    session_id: str                           # Unique audit session ID
-    video_id: str                             # Shortened video identifier
-    status: str                               # PASS or FAIL
-    final_report: str                         # AI-generated summary
-    compliance_results: List[ComplianceIssue] # List of violations (can be empty)
+# ========== STEP 4: ENDPOINTS ==========
 
-
-# ========== STEP 7: DEFINE MAIN ENDPOINT ==========
 @app.post("/audit", response_model=AuditResponse)
-# ↑ @app.post = Decorator that registers this function as a POST endpoint
-# ↑ "/audit" = URL path (http://localhost:8000/audit)
-# ↑ response_model = Tells FastAPI to validate response matches AuditResponse
-
 async def audit_video(request: AuditRequest):
-    # ========== GENERATE SESSION ID ==========
-    session_id = str(uuid.uuid4())  
-    # Creates unique ID like: "ce6c43bb-c71a-4f16-a377-8b493502fee2"
+    session_id = str(uuid.uuid4())
+    video_id_short = f"vid_{session_id[:8]}"
     
-    video_id_short = f"vid_{session_id[:8]}"  
-    # Takes first 8 characters: "vid_ce6c43bb"
-    # Easier to reference in logs/UI than full UUID
-    
-    # ========== LOG INCOMING REQUEST ==========
-    logger.info(f"Received Audit Request: {request.video_url} (Session: {session_id})")
-    # Example output: "Received Audit Request: https://youtu.be/abc (Session: ce6c43bb...)"
+    # START MANUAL SPAN: This groups all logs and DB calls under one 'Workflow' event in Azure
+    with tracer.start_as_current_span("Execute-Compliance-Graph") as span:
+        # Add metadata to the Azure trace
+        span.set_attribute("video.url", request.video_url)
+        span.set_attribute("video.session_id", session_id)
 
-    # ========== PREPARE GRAPH INPUT ==========
-    initial_inputs = {
-        "video_url": request.video_url,  # From the API request
-        "video_id": video_id_short,      # Generated ID
-        "compliance_results": [],        # Will be populated by Auditor
-        "errors": []                     # Tracks any processing errors
-    }
+        logger.info(f"Starting audit for {request.video_url} [Session: {session_id}]")
 
-    try:
-        # ========== INVOKE LANGGRAPH WORKFLOW ==========
+        initial_inputs = {
+            "video_url": request.video_url,
+            "video_id": video_id_short,
+            "compliance_results": [],
+            "errors": []
+        }
 
-        # This is the SAME logic from main.py - just wrapped in an API
-
-        # Below line performs Synchronous execution, Blocking call - waits for entire workflow to complete (Above line is not recommended for production)
-        # final_state = compliance_graph.invoke(initial_inputs)       
-        
-        # In production, use Asynchronous execution as below to avoid blocking: Async version - doesn't block the server while processing
-        final_state = await compliance_graph.ainvoke(initial_inputs)
-        # ↑ Flow: START → Indexer → Auditor → END
-        # ↑ Returns: Final state dictionary with all results
-        
-        # ========== MAP GRAPH OUTPUT TO API RESPONSE ==========
-        return AuditResponse(
-            session_id=session_id,
-            video_id=final_state.get("video_id"),  
-            # .get() safely retrieves value (None if missing)
+        try:
+            # Execute LangGraph asynchronously
+            final_state = await compliance_graph.ainvoke(initial_inputs)
             
-            status=final_state.get("final_status", "UNKNOWN"),  
-            # Defaults to "UNKNOWN" if key doesn't exist
+            # Tag the span with the result
+            final_status = final_state.get("final_status", "UNKNOWN")
+            span.set_attribute("compliance.status", final_status)
             
-            final_report=final_state.get("final_report", "No report generated."),
-            
-            compliance_results=final_state.get("compliance_results", [])
-            # Returns empty list [] if no violations
-        )
-        # FastAPI automatically converts this Pydantic object to JSON
+            logger.info(f"Audit Complete. Status: {final_status}")
 
-    except Exception as e:
-        # ========== ERROR HANDLING ==========
-        logger.error(f"Audit Failed: {str(e)}")  
-        # Log the error for debugging
+            return AuditResponse(
+                session_id=session_id,
+                video_id=final_state.get("video_id"),
+                status=final_status,
+                final_report=final_state.get("final_report", "No report generated."),
+                compliance_results=final_state.get("compliance_results", [])
+            )
+
+        except Exception as e:
+            # Record the failure in Azure Application Insights
+            span.record_exception(e)
+            span.set_status(trace.Status(trace.StatusCode.ERROR))
+            logger.error(f"Audit Failed for {video_id_short}: {str(e)}")
+            
+            raise HTTPException(
+                status_code=500,
+                detail=f"Workflow Execution Failed: {str(e)}"
+            )
         
-        raise HTTPException(
-            status_code=500,  # 500 = Internal Server Error
-            detail=f"Workflow Execution Failed: {str(e)}"
-            # Returns this error message to the client
-        )
 
-
-# ========== STEP 8: HEALTH CHECK ENDPOINT ==========
+# ========== HEALTH CHECK ENDPOINT ==========
 @app.get("/health")
-# ↑ GET request at http://localhost:8000/health
 def health_check():
     return {"status": "healthy", "service": "Tube Guard AI"}
-    # FastAPI automatically converts dict to JSON response
-
-
