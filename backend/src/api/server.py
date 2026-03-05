@@ -16,13 +16,13 @@ load_dotenv(override=True)
 # ========== STEP 2: INITIALIZE TELEMETRY ==========
 from backend.src.api.telemetry import setup_telemetry
 setup_telemetry()  
-# ☝️ "Activates the sensors" - starts tracking all API activity
+# Starts tracking all API activity
 # Must happen AFTER load_dotenv() but BEFORE creating FastAPI app
 
 
 # ========== STEP 3: IMPORT WORKFLOW GRAPH ==========
 from backend.src.graph.workflow import app as compliance_graph
-# Imports your LangGraph workflow (Indexer → Auditor)
+# Imports my LangGraph workflow (Indexer → Auditor)
 # Renamed to 'compliance_graph' to avoid confusion with FastAPI's 'app'
 
 
@@ -50,7 +50,7 @@ app = FastAPI(
 
 # --- REQUEST MODEL ---
 class AuditRequest(BaseModel):
-    
+
     video_url: str  # Required string field
 
 
@@ -101,15 +101,16 @@ async def audit_video(request: AuditRequest):
 
     try:
         # ========== INVOKE LANGGRAPH WORKFLOW ==========
+
         # This is the SAME logic from main.py - just wrapped in an API
-        final_state = compliance_graph.invoke(initial_inputs)
-        # ↑ Blocking call - waits for entire workflow to complete
+
+        # Below line performs Synchronous execution, Blocking call - waits for entire workflow to complete (Above line is not recommended for production)
+        # final_state = compliance_graph.invoke(initial_inputs)       
+        
+        # In production, use Asynchronous execution as below to avoid blocking: Async version - doesn't block the server while processing
+        final_state = await compliance_graph.ainvoke(initial_inputs)
         # ↑ Flow: START → Indexer → Auditor → END
         # ↑ Returns: Final state dictionary with all results
-        
-        # NOTE: In production, you'd use:
-        # await compliance_graph.ainvoke(initial_inputs)
-        # ↑ Async version - doesn't block the server while processing
         
         # ========== MAP GRAPH OUTPUT TO API RESPONSE ==========
         return AuditResponse(
